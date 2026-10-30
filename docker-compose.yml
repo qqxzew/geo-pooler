@@ -95,6 +95,24 @@ services:
     networks: [masumi]
     restart: unless-stopped
 
+  # Agent 2: same image, different entrypoint. Calls Agent 1 over the compose network.
+  land-matcher:
+    build: .
+    container_name: land-matcher
+    command: ["uvicorn", "matcher.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      VALIDATOR_URL: http://land-audit-worker:8000
+      MATCHER_API_KEY: ${MATCHER_API_KEY:-}
+      MATCHER_DATABASE_PATH: /data/matcher.sqlite3
+    depends_on:
+      - land-audit-worker
+    ports:
+      - "127.0.0.1:8001:8001"
+    volumes:
+      - worker_data:/data
+    networks: [masumi]
+    restart: unless-stopped
+
 networks:
   masumi:
     driver: bridge

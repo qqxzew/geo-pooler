@@ -51,6 +51,31 @@ The price is defined by the agent's registry entry — the worker only reports i
 payment-service version requires explicit amounts or a payment-source index, set `MASUMI_REQUESTED_FUNDS_LOVELACE`,
 `MASUMI_PAYMENT_SOURCE_TYPE`, `MASUMI_SUPPORTED_PAYMENT_SOURCE_INDEX` (see `app/config.py`).
 
+## Agent 2 — Matcher (`matcher/`)
+
+Registers a developer's parcel, finds **other developers'** parcels within 1.5 km (polygon-to-polygon distance in
+EPSG:25832) and queues an anonymous teaser for both sides. Own service, own database; calls Agent 1 over HTTP.
+
+```bash
+uvicorn matcher.main:app --port 8001          # needs Agent 1 on VALIDATOR_URL (default :8000)
+python tests/test_matcher.py                   # offline test (validator stubbed)
+```
+
+| Endpoint | |
+|---|---|
+| `POST /register_parcel` | `{developer_id, lat, lon, radius_m? \| polygon_geojson, project_type?, label?}`. Runs Agent 1; `NO_GO` or < 0.5 ha → `status: rejected` + reasons (nothing stored). Otherwise stores it and returns the teasers for new matches. 409 if you registered the same parcel already, 429 above 50 active parcels. |
+| `GET /teasers?developer_id=&unread_only=` | the developer's teaser outbox (polling; the orchestrator can push later) |
+| `GET /parcels?developer_id=` · `DELETE /parcels/{id}?developer_id=` | own parcels · withdraw (closes its matches) |
+
+A teaser contains only: neighbour technology, area band, audit verdict, score band, Bundesland, distance band
+(<500 / 500–1000 / 1000–1500 m), combined-area band and a synergy hint. **Never** coordinates, municipality, parcel id or
+developer identity — those are released by Agent 3 after both sides agree and sign the NDA. Exact geometry, ALKIS id and the
+full audit report are stored for that step. Parcels of the same developer are never matched with each other.
+
+Auth: the service expects the orchestrator to supply `developer_id`; protect it with `MATCHER_API_KEY` (`X-API-Key`).
+Not handled yet: consent/escrow/NDA (Agent 3), paid validation (Agent 1 with `BYPASS_PAYMENT=false` answers 402 here — the
+orchestrator will pay for it). Storage is SQLite with a bounding-box prefilter; move to PostGIS (`ST_DWithin`) beyond a few thousand parcels.
+
 ## Data sources (all keyless, all live)
 
 | Check | Source | Notes |
