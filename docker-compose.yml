@@ -1,0 +1,104 @@
+# Land-audit worker + Masumi payment service (Cardano Preprod) + PostgreSQL.
+# Modelled on the official masumi-services-dev-quickstart. Copy .env.example -> .env first.
+#
+#   docker compose up -d --build land-audit-worker        # worker only (BYPASS_PAYMENT=true testing)
+#   docker compose up -d --build                          # full stack incl. payment service
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: masumi-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [masumi]
+    restart: unless-stopped
+
+  # One-shot: the published payment-service image cannot run the Prisma migrations/seed,
+  # so build the same release from source, migrate + seed the DB, then exit.
+  payment-setup:
+    build:
+      context: https://github.com/masumi-network/masumi-payment-service.git#0.29.0
+      dockerfile_inline: |
+        FROM node:20-slim
+        RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+        RUN corepack enable && corepack prepare pnpm@10.30.2 --activate
+        WORKDIR /usr/src/app
+        COPY . .
+        RUN pnpm install --frozen-lockfile
+    image: masumi-payment-setup:0.29.0
+    container_name: masumi-payment-setup
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres?schema=public
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      ADMIN_KEY: ${ADMIN_KEY:?set ADMIN_KEY in .env}
+      # Names differ from ours: the service wants network-specific variables.
+      BLOCKFROST_API_KEY_PREPROD: ${BLOCKFROST_API_KEY:?set BLOCKFROST_API_KEY (preprod...) in .env}
+      SELLING_WALLET_PREPROD_MNEMONIC: ${WALLET_SEED_PHRASE:-}
+      COLLECTION_WALLET_PREPROD_ADDRESS: ${WALLET_ADDRESS:-}
+      SEED_ONLY_IF_EMPTY: "TRUE"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "pnpm run prisma:migrate && pnpm run prisma:seed"
+    networks: [masumi]
+    restart: "no"
+
+  masumi-payment-service:
+    image: ghcr.io/masumi-network/masumi-payment-service:0.29.0
+    container_name: masumi-payment-service
+    ports:
+      - "127.0.0.1:3001:3001" # admin UI: http://localhost:3001/admin/  (plain HTTP — keep on loopback)
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres?schema=public
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      BLOCK_CONFIRMATIONS_THRESHOLD: ${BLOCK_CONFIRMATIONS_THRESHOLD:-0}
+      CHECK_TX_INTERVAL: ${CHECK_TX_INTERVAL:-15}
+    depends_on:
+      payment-setup:
+        condition: service_completed_successfully
+    # The image's default command tries to download pnpm; start the server directly.
+    command: ["node", "./dist/index.js"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/v1/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [masumi]
+    restart: unless-stopped
+
+  land-audit-worker:
+    build: .
+    container_name: land-audit-worker
+    # Explicit list instead of env_file: the worker never needs the wallet seed or Blockfrost key.
+    environment:
+      BYPASS_PAYMENT: ${BYPASS_PAYMENT:-true}
+      MASUMI_NETWORK: ${MASUMI_NETWORK:-Preprod}
+      MASUMI_PAYMENT_SERVICE_URL: http://masumi-payment-service:3001
+      MASUMI_API_KEY: ${MASUMI_API_KEY:-}
+      AGENT_IDENTIFIER: ${AGENT_IDENTIFIER:-}
+      PRICE_TADA: ${PRICE_TADA:-10}
+      MAX_AREA_HA: ${MAX_AREA_HA:-1000}
+      DATABASE_PATH: /data/jobs.sqlite3
+    # Deliberately no depends_on: with BYPASS_PAYMENT=true the worker must start without the payment stack.
+    ports:
+      - "8000:8000"
+    volumes:
+      - worker_data:/data
+    networks: [masumi]
+    restart: unless-stopped
+
+networks:
+  masumi:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  worker_data:

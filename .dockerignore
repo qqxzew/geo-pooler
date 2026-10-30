@@ -1,0 +1,8 @@
+.env
+.venv
+.git
+__pycache__
+data
+*.sqlite3
+test_worker.py
+README.md
