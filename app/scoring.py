@@ -140,6 +140,7 @@ def build_report(inp: LandCheckInput, site: Site, gis: GisResult) -> AuditReport
         grid = GridAccess(
             nearest_substation_m=osm["substation_m"],
             substation_name=osm["substation_name"] or "none within 10 km",
+            substation_operator=osm.get("substation_operator"),
             nearest_powerline_m=osm["powerline_m"], grid_score=gscore,
         )
         reg = RegulatoryChecks(

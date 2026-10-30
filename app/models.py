@@ -62,6 +62,7 @@ class GridAccess(BaseModel):
     # null = nothing found inside the search radius (substation 10 km, power line 5 km)
     nearest_substation_m: Optional[float] = None
     substation_name: Optional[str] = None
+    substation_operator: Optional[str] = None  # OSM operator tag of that substation (grid operator hint)
     nearest_powerline_m: Optional[float] = None
     grid_score: int = 0
 

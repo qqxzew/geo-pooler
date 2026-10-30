@@ -114,6 +114,45 @@ hidden until both signed.
 > **Legal notice:** the NDA text is a template written to common German B2B practice. It is not legal advice — have a
 > German lawyer review it (especially the Vertragsstrafe and Nichtumgehung clauses) before production use.
 
+## Agent 4 — Pool Architect (`architect/`)
+
+```bash
+uvicorn architect.main:app --port 8003     # needs Agent 3 (ESCROW_URL) and ESCROW_API_KEY set on both
+python tests/test_architect.py             # offline end-to-end test (real Agents 2+3, stubbed validator)
+```
+
+Works only on a **revealed** deal (both NDAs signed): it pulls both companies and parcels from Agent 3's internal
+`/internal/deals/{match_id}/package` endpoint (needs `ESCROW_API_KEY`), computes the joint project and each firm's share,
+and renders two German PDFs.
+
+| Step | Call |
+|---|---|
+| Compute plan + both documents (new version on every call) | `POST /pools/{match_id}` `{developer_id, method?: shapley\|area\|revenue, assumptions?: {…}}` |
+| Plan as JSON (shares, synergy, layout, warnings, document hashes) | `GET /pools/{match_id}?developer_id=` |
+| Draft **Flächenpoolvertrag** (POOL-DE-1.0) | `GET /pools/{match_id}/agreement.pdf?developer_id=` |
+| **Netzanschlussbegehren** (NAB-DE-1.0) to the grid operator | `GET /pools/{match_id}/grid_application.pdf?developer_id=` |
+
+**Model** (`architect/model.py`, every constant is an overridable `assumptions` field):
+wind layout = greedy turbine placement on a 25 m grid (rotor radius inside the parcel, 4 rotor diameters spacing, also *across*
+the two parcels); wind energy from the audited 100 m speed via a linear capacity-factor curve; solar capacity from area × usable
+fraction × slope derating, energy from the audited PVGIS yield; NPV over 25 years at 6 % after capex, opex, grid connection
+(fixed + cable to the nearest substation) and development costs. Fair split = **Shapley value of a 2-player game**: each firm
+keeps the value of developing alone, the pooling synergy (shared grid connection, one permitting effort per technology) is
+split equally; alternatives by area or by revenue. Shares are integer **basis points** (largest-remainder rounding, always
+summing to exactly 10 000). If pooling does not create value (e.g. one parcel is unviable on its own), the Shapley split is not
+meaningful: the plan says so in `warnings` and falls back to the area key (`method_applied`).
+
+**Documents:** the Flächenpoolvertrag is a draft cooperation agreement (Projektgesellschaft, quotas, Flächensicherung, Kosten,
+Netzanschluss, Beschlüsse, Exklusivität, Vorkaufsrecht, Ausstieg) with the areas and the calculation as annexes; it cites the hash
+of the signed NDA. The Netzanschlussbegehren is addressed to the operator found in OSM (`operator` tag of the nearest substation,
+placeholder otherwise), cites § 8 EEG 2023 / § 17 EnWG and lists plant data, coordinates of the planned turbines and the
+questions to answer (Netzverknüpfungspunkt, Kapazität, Kosten, Zeitplan). Placeholders `[bitte ergänzen]` mark what only you know.
+Phone numbers are never printed. No Masumi payment is attached to this agent yet (the orchestrator will handle that).
+
+> **Legal / financial notice:** both documents are machine-generated drafts, the model is a screening model with default
+> assumptions — not bankable, not legal or tax advice. Have a German lawyer review the contract (Gesellschaftsrecht,
+> § 550 / § 311b BGB for the Flächenverträge, tax) before anyone signs.
+
 ## Data sources (all keyless, all live)
 
 | Check | Source | Notes |

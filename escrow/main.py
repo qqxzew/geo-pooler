@@ -117,6 +117,13 @@ def create_app(settings: Optional[EscrowSettings] = None, service: Optional[Deal
     async def reveal(request: Request, match_id: str, developer_id: str = Query(...)):
         return await guard(svc(request).reveal(match_id, developer_id))
 
+    @app.get("/internal/deals/{match_id}/package", dependencies=[Depends(auth)])
+    async def package(request: Request, match_id: str):
+        """Both parties + parcels of a revealed deal (Agent 4). Refuses to run without an API key."""
+        if not s.escrow_api_key:
+            raise HTTPException(503, detail="set ESCROW_API_KEY to enable the internal package endpoint")
+        return await guard(svc(request).package(match_id))
+
     return app
 
 

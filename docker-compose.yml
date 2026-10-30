@@ -121,7 +121,7 @@ services:
     environment:
       MATCHER_URL: http://land-matcher:8001
       MATCHER_API_KEY: ${MATCHER_API_KEY:?set MATCHER_API_KEY (needed for the internal match endpoint)}
-      ESCROW_API_KEY: ${ESCROW_API_KEY:-}
+      ESCROW_API_KEY: ${ESCROW_API_KEY:?set ESCROW_API_KEY (needed for the internal package endpoint used by Agent 4)}
       ESCROW_DATABASE_PATH: /data/escrow.sqlite3
       ESCROW_BYPASS_PAYMENT: ${ESCROW_BYPASS_PAYMENT:-true}
       ESCROW_AGENT_IDENTIFIER: ${ESCROW_AGENT_IDENTIFIER:-}
@@ -136,6 +136,28 @@ services:
       - land-matcher
     ports:
       - "127.0.0.1:8002:8002"
+    volumes:
+      - worker_data:/data
+    networks: [masumi]
+    restart: unless-stopped
+
+  land-architect:
+    build: .
+    container_name: land-architect
+    command: ["uvicorn", "architect.main:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment:
+      ESCROW_URL: http://land-escrow:8002
+      ESCROW_API_KEY: ${ESCROW_API_KEY:?set ESCROW_API_KEY (Agent 4 reads the revealed deal from Agent 3 with it)}
+      ARCHITECT_API_KEY: ${ARCHITECT_API_KEY:-}
+      ARCHITECT_DATABASE_PATH: /data/architect.sqlite3
+      PLATFORM_NAME: ${PLATFORM_NAME:-Flächenpool-Plattform}
+      POOL_JURISDICTION_CITY: ${POOL_JURISDICTION_CITY:-Berlin}
+      POOL_EXCLUSIVITY_MONTHS: ${POOL_EXCLUSIVITY_MONTHS:-24}
+      POOL_TERM_YEARS: ${POOL_TERM_YEARS:-30}
+    depends_on:
+      - land-escrow
+    ports:
+      - "127.0.0.1:8003:8003"
     volumes:
       - worker_data:/data
     networks: [masumi]

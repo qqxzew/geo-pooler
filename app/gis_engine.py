@@ -245,7 +245,7 @@ async def query_osm(client: httpx.AsyncClient, site: Site, settings: Settings) -
     data = await _overpass_fetch(client, q, settings.overpass_endpoints)
 
     poly = site.poly_utm
-    best_sub: tuple[float, str] | None = None
+    best_sub: tuple[float, str, Optional[str]] | None = None
     best_line: float | None = None
     best_res: float | None = None
     corridor = False
@@ -261,7 +261,7 @@ async def query_osm(client: httpx.AsyncClient, site: Site, settings: Settings) -
             if tags.get("voltage"):
                 label += f" ({tags['voltage']} V)"
             if best_sub is None or d < best_sub[0]:
-                best_sub = (d, label)
+                best_sub = (d, label, tags.get("operator"))
         elif tags.get("power") == "line":
             best_line = d if best_line is None else min(best_line, d)
         elif tags.get("landuse") == "residential":
@@ -282,6 +282,7 @@ async def query_osm(client: httpx.AsyncClient, site: Site, settings: Settings) -
     return {
         "substation_m": round(best_sub[0], 1) if best_sub else None,
         "substation_name": best_sub[1] if best_sub else None,
+        "substation_operator": best_sub[2] if best_sub else None,
         "powerline_m": round(best_line, 1) if best_line is not None else None,
         "residential_m": round(best_res, 1) if best_res is not None else None,
         "eeg_corridor": corridor,

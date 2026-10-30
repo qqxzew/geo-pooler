@@ -46,7 +46,7 @@ def fake_validator(request: httpx.Request) -> httpx.Response:
 
 
 async def main():
-    s = MatcherSettings(matcher_database_path=f"{tempfile.mkdtemp()}/m.sqlite3", max_parcels_per_developer=3)
+    s = MatcherSettings(matcher_database_path=f"{tempfile.mkdtemp()}/m.sqlite3", max_parcels_per_developer=3, matcher_api_key="")
     app = create_app(s)
     async with app.router.lifespan_context(app):
         app.state.client = httpx.AsyncClient(transport=httpx.MockTransport(fake_validator))

@@ -282,6 +282,19 @@ class DealService:
             return deal["nda_pdf"], f"NDA_{match_id[:8]}_entwurf.pdf"
         raise DealError(409, f"no NDA available in status '{deal['status']}'")
 
+    async def package(self, match_id: str) -> dict[str, Any]:
+        """Both parties' company data and parcels once the deal is revealed — for Agent 4 only."""
+        deal = await self.store.load_deal(match_id)
+        if deal is None:
+            raise DealError(404, "no deal for this match")
+        d = deal["data"]
+        if deal["status"] != "revealed":
+            raise DealError(409, f"deal is '{deal['status']}'; the package exists only after both signatures")
+        return {"match_id": match_id, "signed_nda": {"nda_id": d["nda"]["id"], "document_sha256": d["signed_sha256"],
+                                                      "revealed_at": _iso(d["revealed_at"])},
+                "parties": [{"developer_id": dev, "company": d["profiles"][dev], "parcel": d["parcels_full"][dev]}
+                            for dev in d["developers"]]}
+
     async def reveal(self, match_id: str, dev: str) -> dict[str, Any]:
         deal = await self._deal(match_id, dev)
         d = deal["data"]
