@@ -10,6 +10,9 @@ class MatcherSettings(BaseSettings):
     # Agent 1 (validator) — called over HTTP so it can later move behind the orchestrator.
     validator_url: str = "http://localhost:8000"
     validator_poll_timeout_s: float = 120.0
+    # Agent 1's INTERNAL_API_KEY. Set = unpaid POST /internal/audit (works with BYPASS_PAYMENT=false);
+    # empty = public /start_job, which only completes while Agent 1 runs with BYPASS_PAYMENT=true.
+    validator_api_key: str = ""
 
     matcher_database_path: str = "data/matcher.sqlite3"
     match_radius_m: float = 1500.0

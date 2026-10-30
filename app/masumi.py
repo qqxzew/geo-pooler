@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 import uuid
@@ -11,7 +12,7 @@ from typing import Any, Optional
 
 import canonicaljson
 import httpx
-from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from pydantic import ValidationError
 
 from .config import Settings
@@ -222,6 +223,9 @@ def build_router() -> APIRouter:
             identifier = job_id.replace("-", "")[:20]
         if not s.bypass_payment and not (14 <= len(identifier) <= 26):
             raise HTTPException(422, detail="identifier_from_purchaser must be 14-26 characters")
+        # The payment service rejects anything that is not a hex string; fail fast with a clear 422.
+        if not s.bypass_payment and not all(c in "0123456789abcdefABCDEF" for c in identifier):
+            raise HTTPException(422, detail="identifier_from_purchaser must be a hex string")
 
         job = {"job_id": job_id, "status": "awaiting_payment", "identifier_from_purchaser": identifier,
                "input_json": inp.model_dump_json()}
@@ -252,6 +256,23 @@ def build_router() -> APIRouter:
             "identifierFromPurchaser": identifier, "input_hash": in_hash,
             "price": {"amount": s.price_tada, "unit": "tADA"},
         }
+
+    @router.post("/internal/audit")
+    async def internal_audit(request: Request, body: dict[str, Any] = Body(...), x_api_key: str = Header(default="")):
+        """Unpaid audit for the platform's own agents (Agent 2). Same report as a paid job; nothing goes on-chain."""
+        svc = _service(request)
+        if not svc.s.internal_api_key:
+            raise HTTPException(503, detail="set INTERNAL_API_KEY to enable the internal audit endpoint")
+        if not hmac.compare_digest(x_api_key, svc.s.internal_api_key):
+            raise HTTPException(401, detail="invalid API key")
+        try:
+            inp = LandCheckInput.model_validate(body)
+            site = build_site(inp, svc.s)
+        except (ValidationError, ValueError) as e:
+            msg = e.errors(include_url=False, include_context=False) if isinstance(e, ValidationError) else str(e)
+            raise HTTPException(422, detail=msg)
+        gis = await svc.engine.run(site)
+        return {"status": "completed", "report": json.loads(canonical_report(build_report(inp, site, gis)))}
 
     @router.get("/status")
     async def status(request: Request, job_id: str = Query(...)):

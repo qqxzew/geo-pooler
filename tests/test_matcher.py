@@ -33,7 +33,9 @@ state = {"verdict": "CONDITIONAL_GO", "tech": "solar"}
 
 
 def fake_validator(request: httpx.Request) -> httpx.Response:
-    assert request.url.path == "/start_job"
+    assert request.url.path in ("/start_job", "/internal/audit")
+    if request.url.path == "/internal/audit":
+        assert request.headers.get("X-API-Key") == "ikey", "internal audit needs the validator key"
     report = {
         "overall_verdict": state["verdict"], "score": 77 if state["verdict"] != "NO_GO" else 10,
         "assessed_technology": state["tech"], "warnings": [],
@@ -110,6 +112,20 @@ async def main():
         assert (await c2.get("/teasers", params={"developer_id": "x"})).status_code == 401
         assert (await c2.get("/teasers", params={"developer_id": "x"}, headers={"X-API-Key": "secret"})).status_code == 200
         print("auth OK")
+
+    # paid Agent 1: the matcher must use the keyed /internal/audit, not the public /start_job
+    s3 = MatcherSettings(matcher_database_path=f"{tempfile.mkdtemp()}/m3.sqlite3", matcher_api_key="", validator_api_key="ikey")
+    app3 = create_app(s3)
+    async with app3.router.lifespan_context(app3):
+        seen: list[str] = []
+        app3.state.client = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda req: (seen.append(req.url.path), fake_validator(req))[1]))
+        c3 = httpx.AsyncClient(transport=httpx.ASGITransport(app=app3), base_url="http://m")
+        state.update(verdict="CONDITIONAL_GO", tech="solar")
+        r = await c3.post("/register_parcel", json={"developer_id": "dev9", **at(0)})
+        assert r.status_code == 200 and r.json()["status"] == "registered", r.text
+        assert seen == ["/internal/audit"], seen
+        print("internal validator OK")
 
 
 asyncio.run(main())

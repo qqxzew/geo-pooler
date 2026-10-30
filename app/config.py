@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     masumi_supported_payment_source_index: str = ""
     # If set, sent as RequestedFunds (lovelace). Empty = price taken from the registry entry.
     masumi_requested_funds_lovelace: str = ""
+    # Shared secret for POST /internal/audit (Agent 2 asks for audits without paying). Empty = endpoint disabled.
+    internal_api_key: str = ""
 
     # --- Storage ------------------------------------------------------------
     database_path: str = "data/jobs.sqlite3"

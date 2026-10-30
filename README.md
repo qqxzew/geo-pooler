@@ -49,7 +49,12 @@ sorted keys and no whitespace, so the hash is reproducible. The report contains 
 
 The price is defined by the agent's registry entry — the worker only reports it (`price` in the `start_job` response). If your
 payment-service version requires explicit amounts or a payment-source index, set `MASUMI_REQUESTED_FUNDS_LOVELACE`,
-`MASUMI_PAYMENT_SOURCE_TYPE`, `MASUMI_SUPPORTED_PAYMENT_SOURCE_INDEX` (see `app/config.py`).
+`MASUMI_PAYMENT_SOURCE_TYPE`, `MASUMI_SUPPORTED_PAYMENT_SOURCE_INDEX` (see `app/config.py`). Payment-service 0.29.0 seeds
+only a `Web3CardanoV2` source, so docker compose defaults these to `Web3CardanoV2` / `0` and agents must be registered as V2
+(pricing inside `supportedPaymentSources`, e.g. `POST /api/v1/registry`).
+
+On a host whose SSH gateway forbids port forwarding (Hack Club Nest: `ssh -L` → "administratively prohibited"),
+open the server's admin UI with `python scripts/admin_tunnel.py user@host` → <http://localhost:3001/admin/>.
 
 ## Agent 2 — Matcher (`matcher/`)
 

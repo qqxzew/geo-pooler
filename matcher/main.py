@@ -37,6 +37,14 @@ class RegisterBody(LandCheckInput):
 async def run_validator(client: httpx.AsyncClient, s: MatcherSettings, inp: LandCheckInput) -> dict[str, Any]:
     """Ask Agent 1 for the audit report of this geometry. Returns the report dict."""
     payload = inp.model_dump(mode="json", exclude_none=True)
+    if s.validator_api_key:
+        r = await client.post(f"{s.validator_url.rstrip('/')}/internal/audit", json=payload,
+                              headers={"X-API-Key": s.validator_api_key}, timeout=s.validator_poll_timeout_s)
+        if r.status_code == 422:
+            raise HTTPException(422, detail=r.json().get("detail"))
+        if r.status_code >= 400:
+            raise HTTPException(502, detail=f"validator internal audit -> HTTP {r.status_code}: {r.text[:200]}")
+        return r.json()["report"]
     r = await client.post(f"{s.validator_url.rstrip('/')}/start_job", json=payload, timeout=s.validator_poll_timeout_s)
     if r.status_code == 422:
         raise HTTPException(422, detail=r.json().get("detail"))

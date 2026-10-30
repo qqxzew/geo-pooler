@@ -84,9 +84,14 @@ services:
       MASUMI_PAYMENT_SERVICE_URL: http://masumi-payment-service:3001
       MASUMI_API_KEY: ${MASUMI_API_KEY:-}
       AGENT_IDENTIFIER: ${AGENT_IDENTIFIER:-}
+      # payment-service 0.29 seeds only a Web3CardanoV2 source; V2 payment requests need both of these.
+      MASUMI_PAYMENT_SOURCE_TYPE: ${MASUMI_PAYMENT_SOURCE_TYPE:-Web3CardanoV2}
+      MASUMI_SUPPORTED_PAYMENT_SOURCE_INDEX: ${MASUMI_SUPPORTED_PAYMENT_SOURCE_INDEX:-0}
       PRICE_TADA: ${PRICE_TADA:-10}
       MAX_AREA_HA: ${MAX_AREA_HA:-1000}
       DATABASE_PATH: /data/jobs.sqlite3
+      # Agent 2 gets unpaid audits via POST /internal/audit with this key (same secret as MATCHER_API_KEY).
+      INTERNAL_API_KEY: ${MATCHER_API_KEY:?set MATCHER_API_KEY}
     # Deliberately no depends_on: with BYPASS_PAYMENT=true the worker must start without the payment stack.
     ports:
       - "8000:8000"
@@ -100,8 +105,12 @@ services:
     build: .
     container_name: land-matcher
     command: ["uvicorn", "matcher.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    # The Dockerfile HEALTHCHECK probes :8000 (Agent 1); point it at this service's port.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health').status==200 else 1)"]
     environment:
       VALIDATOR_URL: http://land-audit-worker:8000
+      VALIDATOR_API_KEY: ${MATCHER_API_KEY:?set MATCHER_API_KEY}
       MATCHER_API_KEY: ${MATCHER_API_KEY:?set MATCHER_API_KEY}
       MATCHER_DATABASE_PATH: /data/matcher.sqlite3
     depends_on:
@@ -118,6 +127,8 @@ services:
     build: .
     container_name: land-escrow
     command: ["uvicorn", "escrow.main:app", "--host", "0.0.0.0", "--port", "8002"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health').status==200 else 1)"]
     environment:
       MATCHER_URL: http://land-matcher:8001
       MATCHER_API_KEY: ${MATCHER_API_KEY:?set MATCHER_API_KEY (needed for the internal match endpoint)}
@@ -128,6 +139,8 @@ services:
       MASUMI_NETWORK: ${MASUMI_NETWORK:-Preprod}
       MASUMI_PAYMENT_SERVICE_URL: http://masumi-payment-service:3001
       MASUMI_API_KEY: ${MASUMI_API_KEY:-}
+      MASUMI_PAYMENT_SOURCE_TYPE: ${MASUMI_PAYMENT_SOURCE_TYPE:-Web3CardanoV2}
+      MASUMI_SUPPORTED_PAYMENT_SOURCE_INDEX: ${MASUMI_SUPPORTED_PAYMENT_SOURCE_INDEX:-0}
       DEPOSIT_TADA: ${DEPOSIT_TADA:-10}
       PLATFORM_NAME: ${PLATFORM_NAME:-Flächenpool-Plattform}
       NDA_JURISDICTION_CITY: ${NDA_JURISDICTION_CITY:-Berlin}
@@ -145,6 +158,8 @@ services:
     build: .
     container_name: land-architect
     command: ["uvicorn", "architect.main:app", "--host", "0.0.0.0", "--port", "8003"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/health').status==200 else 1)"]
     environment:
       ESCROW_URL: http://land-escrow:8002
       ESCROW_API_KEY: ${ESCROW_API_KEY:?set ESCROW_API_KEY (Agent 4 reads the revealed deal from Agent 3 with it)}
