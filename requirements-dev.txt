@@ -1,0 +1,2 @@
+-r requirements.txt
+pypdf>=4.0   # PDF validation in tests/test_escrow.py

@@ -76,6 +76,44 @@ Auth: the service expects the orchestrator to supply `developer_id`; protect it 
 Not handled yet: consent/escrow/NDA (Agent 3), paid validation (Agent 1 with `BYPASS_PAYMENT=false` answers 402 here — the
 orchestrator will pay for it). Storage is SQLite with a bounding-box prefilter; move to PostGIS (`ST_DWithin`) beyond a few thousand parcels.
 
+## Agent 3 — Escrow & NDA (`escrow/`)
+
+```bash
+uvicorn escrow.main:app --port 8002        # needs Agent 2 (MATCHER_URL) and MATCHER_API_KEY set on both
+pip install -r requirements-dev.txt && python tests/test_escrow.py     # offline end-to-end test incl. PDF checks
+```
+
+Flow per match (`match_id` = the id in the teasers): **consent → deposits → NDA → signatures → reveal**.
+
+| Step | Call |
+|---|---|
+| Party data for the NDA (company, address, representative, e-mail) | `PUT /developers/{id}/profile` |
+| Consent (both must `accept`; either `decline` ends the deal) | `POST /deals/{match_id}/consent` `{developer_id, decision}` |
+| Status, payment instructions, NDA info | `GET /deals/{match_id}?developer_id=` (polling advances the state machine) |
+| NDA PDF (draft; after both signed: signed version with Signaturprotokoll) | `GET /deals/{match_id}/nda.pdf?developer_id=` |
+| Confirm the NDA | `POST /deals/{match_id}/sign` `{developer_id, signer_name, signer_role, document_sha256, accept: true}` |
+| Contacts + parcel boundaries + audit report of the counterpart | `GET /deals/{match_id}/reveal?developer_id=` — **403 until both signed** |
+
+**Money (Masumi):** after both consent, each developer gets their own payment request (the agent is the seller of a "reveal"
+service). Funds are locked on-chain; only when both signed does the agent submit the result hash
+(MIP-004 over `{match_id, signed_nda_sha256, revealed_at}`), which lets Masumi release the funds. If the deal ends
+earlier (decline / deadline / failed payment) no result is submitted and buyers use Masumi's refund. Deadlines: 7 days
+to consent, 48 h to deposit, 7 days to sign (`CONSENT_WINDOW_H`, `DEPOSIT_WINDOW_H`, `SIGNATURE_WINDOW_H`).
+`ESCROW_BYPASS_PAYMENT=true` skips the chain for testing. Register this agent in Masumi separately from Agent 1
+(its own `ESCROW_AGENT_IDENTIFIER`).
+
+**NDA** (`escrow/nda.py`, template `NDA-DE-1.0`, German): Vertraulichkeitsdefinition, Ausnahmen (angelehnt an § 2 GeschGehG),
+Need-to-know, **Nichtumgehung / Schutz der Flächeneigentümer** (24 Monate), Vertragsstrafe nach Hamburger Brauch (§ 315 BGB, mit
+Höchstbetrag), Rückgabe/Löschung, DSGVO, Laufzeit/Nachwirkung, Textform § 126b BGB, deutsches Recht, Gerichtsstand. The PDF
+is deterministic (same inputs → same SHA-256); the signer must submit the hash of the document they were shown. The signed version
+adds a *Signaturprotokoll* (names, roles, UTC time, IP, document hash). Confirmation is a *simple electronic* acceptance in Textform,
+**not** a qualified e-signature (eIDAS) — plug in a QES provider if you need one.
+The NDA names both companies and addresses (unavoidable for a contract); phone numbers, parcel locations and boundaries stay
+hidden until both signed.
+
+> **Legal notice:** the NDA text is a template written to common German B2B practice. It is not legal advice — have a
+> German lawyer review it (especially the Vertragsstrafe and Nichtumgehung clauses) before production use.
+
 ## Data sources (all keyless, all live)
 
 | Check | Source | Notes |

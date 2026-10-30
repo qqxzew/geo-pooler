@@ -7,3 +7,4 @@ shapely>=2.0
 pyproj>=3.6
 lxml>=5.2
 canonicaljson>=2.0
+reportlab>=4.2

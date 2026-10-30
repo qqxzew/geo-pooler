@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import time
 import uuid
@@ -126,12 +127,25 @@ def create_app(settings: Optional[MatcherSettings] = None, transport: Optional[h
             raise HTTPException(404, detail="no active parcel with this id for this developer")
         return {"status": "withdrawn", "parcel_id": parcel_id}
 
+    @app.get("/internal/matches/{match_id}", dependencies=[Depends(auth)])
+    async def internal_match(request: Request, match_id: str):
+        """Un-anonymised match data for Agent 3 (escrow/NDA). Refuses to run without an API key."""
+        if not s.matcher_api_key:
+            raise HTTPException(503, detail="set MATCHER_API_KEY to enable the internal match endpoint")
+        rec = await request.app.state.store.get_match(match_id)
+        if rec is None:
+            raise HTTPException(404, detail="unknown match")
+        keep = ("id", "developer_id", "label", "assessed_technology", "verdict", "score", "area_ha", "bundesland",
+                "municipality", "alkis_id", "status")
+        parcels = [{**{k: p[k] for k in keep}, "geometry": json.loads(p["geom_geojson"]),
+                    "report": json.loads(p["report_json"])} for p in rec["parcels"]]
+        return {"match": {"id": rec["match"]["id"], "status": rec["match"]["status"],
+                          "distance_m": rec["match"]["distance_m"]}, "parcels": parcels}
+
     return app
 
 
 def _dumps(o: Any) -> str:
-    import json
-
     return json.dumps(o, ensure_ascii=False)
 
 

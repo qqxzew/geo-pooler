@@ -193,6 +193,16 @@ class MatcherStore:
             c.execute("UPDATE matches SET status='closed' WHERE parcel_a=? OR parcel_b=?", (parcel_id, parcel_id))
         return True
 
+    def _get_match(self, match_id: str) -> Optional[dict[str, Any]]:
+        """Full (non-anonymous) match record — for Agent 3 only."""
+        with self._tx() as c:
+            m = c.execute("SELECT * FROM matches WHERE id=?", (match_id,)).fetchone()
+            if not m:
+                return None
+            parcels = [dict(c.execute("SELECT * FROM parcels WHERE id=?", (pid,)).fetchone())
+                       for pid in (m["parcel_a"], m["parcel_b"])]
+        return {"match": dict(m), "parcels": parcels}
+
     def _get_parcel(self, parcel_id: str, developer_id: str) -> Optional[dict[str, Any]]:
         with self._tx() as c:
             r = c.execute("SELECT * FROM parcels WHERE id=? AND developer_id=?", (parcel_id, developer_id)).fetchone()
@@ -210,6 +220,9 @@ class MatcherStore:
 
     async def withdraw(self, parcel_id: str, developer_id: str) -> bool:
         return await asyncio.to_thread(self._withdraw, parcel_id, developer_id)
+
+    async def get_match(self, match_id: str):
+        return await asyncio.to_thread(self._get_match, match_id)
 
     async def get_parcel(self, parcel_id: str, developer_id: str):
         return await asyncio.to_thread(self._get_parcel, parcel_id, developer_id)

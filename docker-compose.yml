@@ -102,12 +102,40 @@ services:
     command: ["uvicorn", "matcher.main:app", "--host", "0.0.0.0", "--port", "8001"]
     environment:
       VALIDATOR_URL: http://land-audit-worker:8000
-      MATCHER_API_KEY: ${MATCHER_API_KEY:-}
+      MATCHER_API_KEY: ${MATCHER_API_KEY:?set MATCHER_API_KEY}
       MATCHER_DATABASE_PATH: /data/matcher.sqlite3
     depends_on:
       - land-audit-worker
     ports:
       - "127.0.0.1:8001:8001"
+    volumes:
+      - worker_data:/data
+    networks: [masumi]
+    restart: unless-stopped
+
+  # Agent 3: consent -> Masumi deposits -> German NDA (PDF) -> signatures -> reveal.
+  land-escrow:
+    build: .
+    container_name: land-escrow
+    command: ["uvicorn", "escrow.main:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      MATCHER_URL: http://land-matcher:8001
+      MATCHER_API_KEY: ${MATCHER_API_KEY:?set MATCHER_API_KEY (needed for the internal match endpoint)}
+      ESCROW_API_KEY: ${ESCROW_API_KEY:-}
+      ESCROW_DATABASE_PATH: /data/escrow.sqlite3
+      ESCROW_BYPASS_PAYMENT: ${ESCROW_BYPASS_PAYMENT:-true}
+      ESCROW_AGENT_IDENTIFIER: ${ESCROW_AGENT_IDENTIFIER:-}
+      MASUMI_NETWORK: ${MASUMI_NETWORK:-Preprod}
+      MASUMI_PAYMENT_SERVICE_URL: http://masumi-payment-service:3001
+      MASUMI_API_KEY: ${MASUMI_API_KEY:-}
+      DEPOSIT_TADA: ${DEPOSIT_TADA:-10}
+      PLATFORM_NAME: ${PLATFORM_NAME:-Flächenpool-Plattform}
+      NDA_JURISDICTION_CITY: ${NDA_JURISDICTION_CITY:-Berlin}
+      NDA_MAX_PENALTY_EUR: ${NDA_MAX_PENALTY_EUR:-50000}
+    depends_on:
+      - land-matcher
+    ports:
+      - "127.0.0.1:8002:8002"
     volumes:
       - worker_data:/data
     networks: [masumi]

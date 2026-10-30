@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY matcher ./matcher
+COPY escrow ./escrow
 RUN mkdir -p /data && useradd -r -u 10001 worker && chown worker /data
 USER worker
 
